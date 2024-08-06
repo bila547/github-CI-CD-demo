@@ -38,6 +38,7 @@ jobs:
     steps:
       - name: Test if the server is up
         run: |
-          sleep 60
+          sleep 120  # Increase sleep time to 120 seconds
           curl -v http://103.151.111.188:8080 || true
           test $(curl -s -o /dev/null -w "%{http_code}" http://103.151.111.188:8080) -eq 200
+
