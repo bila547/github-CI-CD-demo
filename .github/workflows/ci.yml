@@ -1,0 +1,86 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
+        run: |
+          echo "Building Docker image..."
+          docker build -t my-nginx-html-server .
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Deploy Docker container
+        run: |
+          echo "Deploying Docker container..."
+          docker stop my-nginx-html-server || true
+          docker rm my-nginx-html-server || true
+          docker run -d --name my-nginx-html-server -p 8080:80 my-nginx-html-server
+
+  test:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Test if the servers are up
+        run: |
+          echo "Testing if the servers are up..."
+          sleep 120
+          echo "Checking Docker container status..."
+          docker ps
+          echo "Waiting for Docker container to be healthy..."
+          while [ "$(docker inspect -f '{{.State.Health.Status}}' my-nginx-html-server)" != "healthy" ]; do
+            echo "Waiting for container to be healthy..."
+            sleep 5
+          done
+          echo "Fetching status from http://127.0.0.1:8080"
+          curl -v http://127.0.0.1:8080 || (docker logs my-nginx-html-server && false)
+          echo "Fetching status from http://103.151.111.188:8080"
+          '[[$(curl -s -o /dev/null -w "%{http_code}" http://103.151.111.188:8080) == "200"]]'
+
