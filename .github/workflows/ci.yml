@@ -1,34 +1,20 @@
-name: CI/CD Pipeline
-
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-
+name: CI
+on: [push]
+env:
+  DOCKER_IMAGE: muhammadbilal647/my-nginx-html-server  # Update with your Docker Hub username
+  DOCKER_TAG: latest  # Tag for the Docker image
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build Docker image
-        run: |
-          echo "Building Docker image..."
-          docker build -t my-nginx-html-server .
-
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Log in to Docker Hub
+      run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+    - name: Build Docker image
+      run: docker build -t ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }} .
+    - name: Push Docker image
+      run: docker push ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}
   deploy:
     runs-on: self-hosted
     needs: build
@@ -41,39 +27,17 @@ jobs:
         run: |
           docker stop my-nginx-html-server || true
           docker rm my-nginx-html-server || true
-          docker run -d --name my-nginx-html-server -p 8080:8080 ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}
+          docker run -d --name my-nginx-html-server -p 8080:80 ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}
           docker ps
           docker logs my-nginx-html-server
-
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: deploy
+    container:
+      image: curlimages/curl:latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Test if the servers are up
+      - name: Test if the server is up
         run: |
-          echo "Testing if the servers are up..."
-          sleep 120
-          echo "Checking Docker container status..."
-          docker ps
-          echo "Waiting for Docker container to be healthy..."
-          while [ "$(docker inspect -f '{{.State.Health.Status}}' my-nginx-html-server)" != "healthy" ]; do
-            echo "Waiting for container to be healthy..."
-            sleep 5
-          done
-          echo "Fetching status from http://127.0.0.1:8080"
-          curl -v http://127.0.0.1:8080 || (docker logs my-nginx-html-server && false)
-          echo "Fetching status from http://103.151.111.188:8080"
-          '[[$(curl -s -o /dev/null -w "%{http_code}" http://103.151.111.188:8080) == "200"]]'
-
+          sleep 60
+          curl -v http://localhost:8080 || true
+          test $(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080) -eq 200
